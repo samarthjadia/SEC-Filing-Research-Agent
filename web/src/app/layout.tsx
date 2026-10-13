@@ -30,18 +30,29 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
-      <body className="min-h-full bg-slate-950 text-slate-100">
-        <header className="border-b border-slate-800">
-          <nav className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
+      <body className="min-h-full text-slate-100">
+        <header className="border-b border-slate-800/80 bg-slate-950/70 backdrop-blur">
+          <nav className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3.5">
             {/* <Link> navigates without a full page reload (client-side routing). */}
-            <Link href="/" className="font-semibold tracking-tight">
-              EDGAR Research Agent
+            <Link href="/" className="flex items-center gap-2.5">
+              <span className="flex h-8 w-8 items-center justify-center rounded-lg border border-sky-400/30 bg-sky-400/10 text-sky-300">
+                <svg viewBox="0 0 16 16" className="h-4 w-4" aria-hidden="true">
+                  <path
+                    fill="currentColor"
+                    d="M3 13.5V8.2h2.2v5.3H3Zm3.9 0V4.6h2.2v8.9H6.9Zm3.9 0V2.5H13v11H10.8Z"
+                  />
+                </svg>
+              </span>
+              <span className="leading-none">
+                <span className="block text-sm font-semibold tracking-tight">EDGAR</span>
+                <span className="mt-0.5 block text-[11px] font-medium tracking-wide text-slate-500">Research Agent</span>
+              </span>
             </Link>
-            <div className="flex gap-5 text-sm text-slate-400">
-              <Link href="/" className="hover:text-slate-100">
+            <div className="flex items-center rounded-full border border-slate-800 bg-slate-900/80 p-1 text-sm">
+              <Link href="/" className="rounded-full px-3 py-1 text-slate-200 hover:bg-slate-800">
                 Research
               </Link>
-              <Link href="/how-it-works" className="hover:text-slate-100">
+              <Link href="/how-it-works" className="rounded-full px-3 py-1 text-slate-400 hover:bg-slate-800 hover:text-slate-100">
                 How it works
               </Link>
             </div>

@@ -15,8 +15,18 @@
   --font-mono: var(--font-geist-mono);
 }
 
+html {
+  background-color: #020617;
+}
+
 body {
   font-family: var(--font-geist-sans), system-ui, sans-serif;
+  background-color: #020617;
+  background-image: radial-gradient(ellipse 70% 50% at 50% 0%, rgba(14, 165, 233, 0.16), transparent 70%);
+  background-repeat: no-repeat;
+  /* One viewport tall, so a long answer does not stretch the glow down the page. */
+  background-size: 100% 100vh;
+  background-position: top center;
 }
 
 /* Hide the default triangle on <summary> (the trace rows draw their own icon). */
