@@ -252,6 +252,13 @@ METRICS: dict[str, dict] = {
     "operating-income": {"label": "Operating income", "concepts": ["OperatingIncomeLoss"]},
 }
 
+# Balance-sheet amounts. These are as-of a date, not a flow across a quarter,
+# so they do not use the quarterly chart filter. The first tag that exists wins.
+BALANCES: dict[str, dict] = {
+    "cash": {"label": "Cash", "concepts": ["CashAndCashEquivalentsAtCarryingValue"]},
+    "debt": {"label": "Long-term debt", "concepts": ["LongTermDebtNoncurrent", "LongTermDebt"]},
+}
+
 
 def _days_between(start: str, end: str) -> int:
     return (date.fromisoformat(end) - date.fromisoformat(start)).days
@@ -319,64 +326,147 @@ def company(ticker: str) -> dict:
     return result
 
 
-@app.get("/financials/{ticker}/{metric}")
-def financials(ticker: str, metric: str, quarters: int = Query(8, ge=1, le=20)) -> dict:
-    """Last N single-quarter values of a metric, oldest → newest (ready to chart).
+def _deduped_quarters(rows: list[dict]) -> list[dict]:
+    """Newest quarter first. A later filing's restatement of the same end date wins."""
+    ranked = sorted(
+        ({"end": row["end"], "val": row["val"], "filed": str(row.get("filed", ""))} for row in rows),
+        key=lambda row: (row["end"], row["filed"]),
+        reverse=True,
+    )
+    seen, series = set(), []
+    for point in ranked:
+        if point["end"] not in seen:
+            seen.add(point["end"])
+            series.append(point)
+    return series
 
-    Filings mix 3-month, 6-month, 9-month and 12-month rows for the same
-    concept. A chart needs comparable bars, so we keep only rows whose
-    start→end span is about one quarter (70–110 days). When a 10-K has no
-    3-month Q4, revenue and income derive it as full year minus nine months.
-    EPS is not derived, because the share count changes each quarter.
+
+def _quarterly_series(ticker: str, metric: str) -> dict | None:
+    """One flow metric as quarterly points, newest first. None when the company never tagged it.
+
+    Filings mix 3-month, 6-month, 9-month and 12-month rows. Comparable quarters
+    are the rows whose span is about 70–110 days. Dollar metrics also gain a
+    derived Q4 (full year minus nine months). EPS does not: per-share math is not additive.
     """
-    # "revenue" from the URL → the display name and the XBRL tags to try.
-    spec = METRICS.get(metric)
-    if spec is None:
-        raise HTTPException(status_code=404, detail=f"Unknown metric {metric!r}. Try: {', '.join(METRICS)}")
-
-    # Companies use different official names for the same idea (three for revenue).
-    # Try each tag and keep the one whose newest number is the most recent.
+    spec = METRICS[metric]
     best: dict | None = None
     for concept in spec["concepts"]:
-        data = get_company_financials(ticker, concept, limit=80)  # from EDGAR company facts, not the filing HTML
+        data = get_company_financials(ticker, concept, limit=80)
         if "error" in data:
-            continue  # this company never used that tag
-        # A fact's fy/fp describe the filing, not the quarter (a 2026 10-Q also
-        # repeats the 2025 comparison), so rows are chosen by their start/end
-        # dates. Dollar metrics also gain a derived Q4. EPS stays 3-month tags only.
+            continue
         if metric == "eps":
-            # Per-share figures do not add, so Q4 is included only when it was tagged.
             rows = [
                 row for row in data["facts"]
                 if row.get("start") and row.get("end") and 70 <= _days_between(row["start"], row["end"]) <= 110
             ]
         else:
             rows = _fourth_quarters(data["facts"])
-        points = sorted(
-            ({"end": row["end"], "val": row["val"], "filed": str(row.get("filed", ""))} for row in rows),
-            key=lambda row: (row["end"], row["filed"]),
-            reverse=True,  # newest quarter first; a restatement (later filing) comes before the original
-        )
+        points = _deduped_quarters(rows)
         if points and (best is None or points[0]["end"] > best["points"][0]["end"]):
-            best = {"concept": concept, "unit": data["unit"], "points": points}
+            best = {"label": spec["label"], "concept": concept, "unit": data["unit"], "points": points}
+    return best
 
-    if best is None:
+
+def _year_ago(points: list[dict], end: str) -> dict | None:
+    """The quarterly point about one year before `end`, allowing a 52- or 53-week year."""
+    latest = date.fromisoformat(end)
+    best: tuple[int, dict] | None = None
+    for point in points:
+        if point["end"] == end:
+            continue
+        gap = (latest - date.fromisoformat(point["end"])).days
+        if 340 <= gap <= 400:
+            distance = abs(gap - 365)
+            if best is None or distance < best[0]:
+                best = (distance, point)
+    return best[1] if best else None
+
+
+def _flow_figure(ticker: str, metric: str) -> dict | None:
+    """Latest quarter, plus the percent change versus the same quarter a year earlier."""
+    series = _quarterly_series(ticker, metric)
+    if series is None or not series["points"]:
+        return None
+    latest = series["points"][0]
+    prior = _year_ago(series["points"], latest["end"])
+    change = None
+    if prior is not None and prior["val"]:
+        change = (latest["val"] - prior["val"]) / abs(prior["val"])
+    return {
+        "label": series["label"],
+        "concept": series["concept"],
+        "unit": series["unit"],
+        "end": latest["end"],
+        "val": latest["val"],
+        "change": change,
+    }
+
+
+def _latest_instant(facts: list[dict]) -> dict | None:
+    """Newest as-of balance. Snapshot tags have no start date; skip any row that covers a span."""
+    instants = []
+    for fact in facts:
+        end = fact.get("end")
+        if not end or "val" not in fact:
+            continue
+        start = fact.get("start")
+        if start and _days_between(start, end) > 5:
+            continue
+        instants.append(fact)
+    if not instants:
+        return None
+    return max(instants, key=lambda row: (row["end"], str(row.get("filed", ""))))
+
+
+def _balance_figure(ticker: str, key: str) -> dict | None:
+    """Latest tagged balance. The first concept the company actually reports wins."""
+    spec = BALANCES[key]
+    for concept in spec["concepts"]:
+        data = get_company_financials(ticker, concept, limit=20)
+        if "error" in data:
+            continue
+        row = _latest_instant(data["facts"])
+        if row is None:
+            continue
+        return {
+            "label": spec["label"],
+            "concept": concept,
+            "unit": data["unit"],
+            "end": row["end"],
+            "val": row["val"],
+            "change": None,
+        }
+    return None
+
+
+@app.get("/company/{ticker}/snapshot")
+def company_snapshot(ticker: str) -> dict:
+    """Latest quarter revenue and net income, with year-ago change, plus cash and long-term debt."""
+    return {
+        "ticker": ticker.upper(),
+        "revenue": _flow_figure(ticker, "revenue"),
+        "net_income": _flow_figure(ticker, "net-income"),
+        "cash": _balance_figure(ticker, "cash"),
+        "debt": _balance_figure(ticker, "debt"),
+    }
+
+
+@app.get("/financials/{ticker}/{metric}")
+def financials(ticker: str, metric: str, quarters: int = Query(8, ge=1, le=20)) -> dict:
+    """Last N single-quarter values of a metric, oldest → newest (ready to chart)."""
+    spec = METRICS.get(metric)
+    if spec is None:
+        raise HTTPException(status_code=404, detail=f"Unknown metric {metric!r}. Try: {', '.join(METRICS)}")
+    series = _quarterly_series(ticker, metric)
+    if series is None:
         raise HTTPException(status_code=404, detail=f"No quarterly {spec['label'].lower()} data for {ticker.upper()}")
-
-    # The same quarter can appear twice (first in a 10-Q, again restated in a 10-K).
-    # Keep the first, which is the newer filing, and drop the rest.
-    seen, series = set(), []
-    for p in best["points"]:
-        if p["end"] not in seen:
-            seen.add(p["end"])
-            series.append(p)
     return {
         "ticker": ticker.upper(),
         "metric": metric,
-        "label": spec["label"],  # "Revenue" — the chart title
-        "concept": best["concept"],  # which XBRL tag actually had the data
-        "unit": best["unit"],  # USD means dollars, not millions
-        "points": [{"end": p["end"], "val": p["val"]} for p in reversed(series[:quarters])],  # oldest → newest
+        "label": series["label"],
+        "concept": series["concept"],
+        "unit": series["unit"],
+        "points": [{"end": p["end"], "val": p["val"]} for p in reversed(series["points"][:quarters])],
     }
 
 

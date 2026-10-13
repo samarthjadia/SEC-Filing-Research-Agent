@@ -173,15 +173,26 @@ def _fiscal_period_for_date(period_end: date, fiscal_year_end_month: int) -> str
     return f"FY{fiscal_year} Q{months_into_year // 3 + 1}"
 
 
-def _fiscal_year_note(fiscal_year_end: str | None) -> str | None:
-    """'0125' → a sentence the model can use to map calendar dates to fiscal periods."""
+def _fiscal_year_label(fiscal_year_end: str | None) -> str | None:
+    """'0830' → 'Fiscal year ends around August 30.' Shown in the UI."""
     if not fiscal_year_end or len(fiscal_year_end) != 4:
         return None
     month, day = int(fiscal_year_end[:2]), int(fiscal_year_end[2:])
-    note = f"Fiscal year ends around {_MONTHS[month - 1]} {day}."
+    label = f"Fiscal year ends around {_MONTHS[month - 1]} {day}."
     if month == 12:
-        return note + " Fiscal quarters line up with calendar quarters."
-    return note + (
+        return label + " Fiscal quarters line up with calendar quarters."
+    return label
+
+
+def _fiscal_year_note(fiscal_year_end: str | None) -> str | None:
+    """Same date, plus the instruction the model needs when quarters are not calendar quarters.
+
+    This stays on the tool result. The UI uses _fiscal_year_label and does not show the instruction.
+    """
+    label = _fiscal_year_label(fiscal_year_end)
+    if label is None or (fiscal_year_end and fiscal_year_end[:2] == "12"):
+        return label
+    return label + (
         " Fiscal quarters do NOT match calendar quarters; use each filing's fiscal_period"
         " (taken from the company's own tags) instead of converting dates yourself."
     )
@@ -340,6 +351,7 @@ def get_company_filings(ticker: str, limit: int = DEFAULT_FILING_LIMIT) -> dict:
     return {
         "ticker": symbol,
         "company": submissions.get("name"),
+        "fiscal_year_label": _fiscal_year_label(fiscal_year_end),
         "fiscal_year_note": _fiscal_year_note(fiscal_year_end),
         "filings": filings[: max(1, limit)],
     }

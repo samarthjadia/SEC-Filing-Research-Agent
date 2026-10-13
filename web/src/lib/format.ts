@@ -13,6 +13,13 @@ export function formatValue(val: number, unit: string): string {
   return `${sign}$${abs.toLocaleString()}`;
 }
 
+/** 0.124 → "+12.4%";  -0.031 → "-3.1%". */
+export function formatChange(change: number): string {
+  const pct = change * 100;
+  const sign = pct > 0 ? "+" : "";
+  return `${sign}${pct.toFixed(1)}%`;
+}
+
 /** "2026-06-27" → "Jun '26" (short label for chart axes). */
 export function shortDate(iso: string): string {
   const d = new Date(`${iso}T00:00:00`); // add a time so it's parsed as local, not UTC midnight

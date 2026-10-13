@@ -22,11 +22,13 @@
 
 import { useEffect, useState } from "react";
 import MetricChart from "./MetricChart";
-import type { CompanyInfo, MetricSeries } from "@/lib/types";
+import { formatChange, formatValue, shortDate } from "@/lib/format";
+import type { CompanyInfo, CompanySnapshot, MetricSeries, SnapshotFigure } from "@/lib/types";
 
 const METRICS = [
   { id: "revenue", label: "Revenue" },
   { id: "net-income", label: "Net income" },
+  { id: "operating-income", label: "Operating" },
   { id: "eps", label: "EPS" },
 ];
 
@@ -41,9 +43,27 @@ async function getJson<T>(url: string): Promise<T> {
 /** A fetched result tagged with the request it belongs to. Exactly one of data / error is set. */
 type Loaded<T> = { key: string; data?: T; error?: string };
 
+function SnapshotCard({ figure }: { figure: SnapshotFigure }) {
+  const change = figure.change;
+  return (
+    <div className="rounded-lg bg-slate-950 px-3 py-2">
+      <p className="text-[11px] text-slate-500">{figure.label}</p>
+      <p className="text-sm font-medium text-slate-100">{formatValue(figure.val, figure.unit)}</p>
+      {change != null ? (
+        <p className={`text-[11px] ${change >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+          {formatChange(change)} vs year ago
+        </p>
+      ) : (
+        <p className="text-[11px] text-slate-500">as of {shortDate(figure.end)}</p>
+      )}
+    </div>
+  );
+}
+
 export default function CompanyPanel({ ticker }: { ticker: string | null }) {
   const [metric, setMetric] = useState("revenue");
   const [companyResult, setCompanyResult] = useState<Loaded<CompanyInfo> | null>(null);
+  const [snapshotResult, setSnapshotResult] = useState<Loaded<CompanySnapshot> | null>(null);
   const [seriesResult, setSeriesResult] = useState<Loaded<MetricSeries> | null>(null);
 
   const seriesKey = `${ticker}/${metric}`;
@@ -60,7 +80,19 @@ export default function CompanyPanel({ ticker }: { ticker: string | null }) {
     };
   }, [ticker]);
 
-  // Effect 2: load the chart whenever the ticker or the selected metric changes.
+  // Effect 2: latest quarter and balance-sheet amounts. Same cache as the chart, no model call.
+  useEffect(() => {
+    if (!ticker) return;
+    let cancelled = false;
+    getJson<CompanySnapshot>(`/api/company/${encodeURIComponent(ticker)}/snapshot`)
+      .then((data) => !cancelled && setSnapshotResult({ key: ticker, data }))
+      .catch((e: Error) => !cancelled && setSnapshotResult({ key: ticker, error: e.message }));
+    return () => {
+      cancelled = true;
+    };
+  }, [ticker]);
+
+  // Effect 3: load the chart whenever the ticker or the selected metric changes.
   useEffect(() => {
     if (!ticker) return;
     let cancelled = false;
@@ -79,6 +111,8 @@ export default function CompanyPanel({ ticker }: { ticker: string | null }) {
   const error = current?.error ?? null;
   const currentSeries = seriesResult?.key === seriesKey ? seriesResult : null;
   const series = currentSeries?.data ?? null;
+  const snapshot = snapshotResult?.key === ticker ? snapshotResult.data ?? null : null;
+  const figures = snapshot ? [snapshot.revenue, snapshot.net_income, snapshot.cash, snapshot.debt].filter((f) => f != null) : [];
 
   if (!ticker) {
     return (
@@ -93,12 +127,20 @@ export default function CompanyPanel({ ticker }: { ticker: string | null }) {
       <header>
         <p className="font-mono text-xs text-sky-400">{ticker}</p>
         <h2 className="text-lg font-semibold text-slate-100">{company?.company ?? (error ? "—" : "Loading…")}</h2>
-        {company?.fiscal_year_note && <p className="mt-1 text-xs text-slate-400">{company.fiscal_year_note}</p>}
+        {company?.fiscal_year_label && <p className="mt-1 text-xs text-slate-400">{company.fiscal_year_label}</p>}
         {error && <p className="mt-1 text-xs text-rose-400">{error}</p>}
       </header>
 
+      {figures.length > 0 && (
+        <div className="grid grid-cols-2 gap-2">
+          {figures.map((figure) => (
+            <SnapshotCard key={figure.label} figure={figure} />
+          ))}
+        </div>
+      )}
+
       <div>
-        {/* Tab buttons: clicking one updates `metric`, which re-runs Effect 2. */}
+        {/* Tab buttons: clicking one updates `metric`, which re-runs Effect 3. */}
         <div className="mb-3 flex gap-1 rounded-lg bg-slate-950 p-1">
           {METRICS.map((m) => (
             <button

@@ -76,7 +76,8 @@ export type Filing = {
 export type CompanyInfo = {
   ticker: string;
   company: string | null;
-  fiscal_year_note: string | null;
+  fiscal_year_label: string | null; // "Fiscal year ends around August 30."
+  fiscal_year_note: string | null; // label plus the model instruction; not shown in the UI
   filings: Filing[];
 };
 
@@ -87,4 +88,22 @@ export type MetricSeries = {
   concept: string; // XBRL concept actually used, e.g. "Revenues"
   unit: string; // "USD" or "USD/shares"
   points: { end: string; val: number }[]; // oldest → newest
+};
+
+/** One number on the snapshot row. `change` is the year-ago fraction for a quarterly flow, and null for a balance. */
+export type SnapshotFigure = {
+  label: string;
+  concept: string;
+  unit: string;
+  end: string;
+  val: number;
+  change: number | null;
+};
+
+export type CompanySnapshot = {
+  ticker: string;
+  revenue: SnapshotFigure | null;
+  net_income: SnapshotFigure | null;
+  cash: SnapshotFigure | null;
+  debt: SnapshotFigure | null;
 };
