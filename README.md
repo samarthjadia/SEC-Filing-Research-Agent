@@ -4,7 +4,7 @@ An agent that answers questions about US public companies from live SEC filings,
 
 Reported numbers come from XBRL, the machine-readable facts companies file. Explanations come from the 10-K and 10-Q themselves: what management wrote about revenue, risk, liquidity, and the business. The two paths stay separate, so a figure in the answer is the tagged value and the prose around it is a passage from the filing.
 
-https://github.com/user-attachments/assets/c9b55579-8498-4a22-b2a1-1ec61c850adb
+https://github.com/user-attachments/assets/5057bcc6-365f-4ead-b016-9db3002c27dc
 
 ## A question, end to end
 
