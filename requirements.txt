@@ -1,0 +1,10 @@
+beautifulsoup4>=4.12.0
+openai>=1.0.0
+python-dotenv>=1.0.0
+pydantic-ai>=2.0.0
+fastapi>=0.110.0
+uvicorn>=0.29.0
+httpx>=0.27.0
+mcp>=2.0.0
+fastmcp-slim>=4.0.0
+boto3>=1.37.0

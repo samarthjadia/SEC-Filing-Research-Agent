@@ -1,0 +1,17 @@
+{
+  "AMD": {
+    "name": "Advanced Micro Devices, Inc.",
+    "fiscal_year_end_month": 12,
+    "fiscal_year_note": "Fiscal year ends on the last Saturday of December, so fiscal quarters line up with calendar quarters (FY2026 Q1 = Jan-Mar 2026)."
+  },
+  "NVDA": {
+    "name": "NVIDIA Corporation",
+    "fiscal_year_end_month": 1,
+    "fiscal_year_note": "Fiscal year ends in late January and is named for the calendar year it ends in. FY2027 = Feb 2026-Jan 2027, so FY2027 Q1 = Feb-Apr 2026."
+  },
+  "APLD": {
+    "name": "Applied Digital Corporation",
+    "fiscal_year_end_month": 5,
+    "fiscal_year_note": "Fiscal year ends May 31 and is named for the calendar year it ends in. FY2026 = Jun 2025-May 2026, so FY2026 Q1 = Jun-Aug 2025."
+  }
+}

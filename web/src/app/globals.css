@@ -1,0 +1,53 @@
+/*
+ * Global styles. Almost all styling is done with Tailwind utility classes
+ * directly in the components (e.g. className="rounded-xl bg-slate-900 p-5").
+ * This file only:
+ *   1. loads Tailwind,
+ *   2. maps the fonts from layout.tsx onto Tailwind's font-sans / font-mono,
+ *   3. styles markdown output, which arrives as plain <p>/<ul>/<strong> tags
+ *      we can't put classNames on directly.
+ */
+
+@import "tailwindcss";
+
+@theme inline {
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+}
+
+/* Hide the default triangle on <summary> (the trace rows draw their own icon). */
+summary::-webkit-details-marker {
+  display: none;
+}
+
+/* Markdown answer styles (used by AnswerCard). */
+.answer-markdown p {
+  margin: 0 0 0.75rem;
+  line-height: 1.65;
+}
+.answer-markdown ul,
+.answer-markdown ol {
+  margin: 0 0 0.75rem;
+  padding-left: 1.25rem;
+}
+.answer-markdown ul {
+  list-style: disc;
+}
+.answer-markdown ol {
+  list-style: decimal;
+}
+.answer-markdown li {
+  margin: 0.25rem 0;
+  line-height: 1.6;
+}
+.answer-markdown strong {
+  color: #f1f5f9;
+  font-weight: 600;
+}
+.answer-markdown > :last-child {
+  margin-bottom: 0;
+}
