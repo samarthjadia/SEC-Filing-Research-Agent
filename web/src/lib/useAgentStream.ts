@@ -97,6 +97,8 @@ function reducer(state: RunState, action: Action): RunState {
       return state.status === "running" ? { ...state, status: "error", error: action.message, finishedAt: now } : state;
 
     case "event": {
+      // Stop already ended this run. A late frame must not add steps or flip status back to done.
+      if (state.status !== "running") return state;
       const ev = action.event;
       switch (ev.type) {
         case "step":
@@ -147,9 +149,15 @@ function reducer(state: RunState, action: Action): RunState {
 export function useAgentStream() {
   const [state, dispatch] = useReducer(reducer, initialState);
   const abortRef = useRef<AbortController | null>(null);
+  // The body reader, so Stop can cancel it. Aborting the fetch alone does not
+  // end a stream Next has already started piping.
+  const readerRef = useRef<ReadableStreamDefaultReader<Uint8Array> | null>(null);
 
   const ask = useCallback(async (question: string) => {
     abortRef.current?.abort(); // cancel any run still in flight
+    const previous = readerRef.current;
+    readerRef.current = null;
+    previous?.cancel().catch(() => {});
     const controller = new AbortController();
     abortRef.current = controller;
     dispatch({ kind: "start", question });
@@ -173,12 +181,14 @@ export function useAgentStream() {
 
       // Read the stream: bytes → text → SSE frames → JSON events.
       const reader = response.body.getReader();
+      readerRef.current = reader;
       const decoder = new TextDecoder();
       let buffer = ""; // holds a partial frame until its closing blank line arrives
 
       while (true) {
+        if (controller.signal.aborted) break;
         const { value, done } = await reader.read();
-        if (done) break;
+        if (done || controller.signal.aborted) break;
         buffer += decoder.decode(value, { stream: true });
 
         // Each complete frame ends with "\n\n". Anything after the last one is incomplete; keep it.
@@ -186,6 +196,7 @@ export function useAgentStream() {
         buffer = frames.pop() ?? "";
 
         for (const frame of frames) {
+          if (controller.signal.aborted) break;
           const dataLine = frame.split("\n").find((line) => line.startsWith("data:"));
           if (!dataLine) continue;
           const event = JSON.parse(dataLine.slice("data:".length).trim()) as AgentEvent;
@@ -193,6 +204,7 @@ export function useAgentStream() {
         }
       }
       // Stream closed. If no final/error event came, the server died mid-run.
+      // Stop already recorded its own message; this one only covers an unexpected close.
       dispatch({ kind: "stopped", message: "The connection closed before the agent finished." });
     } catch (err) {
       if (controller.signal.aborted) {
@@ -200,10 +212,19 @@ export function useAgentStream() {
       } else {
         dispatch({ kind: "fail", message: err instanceof Error ? err.message : "Network error" });
       }
+    } finally {
+      readerRef.current = null;
     }
   }, []);
 
-  const stop = useCallback(() => abortRef.current?.abort(), []);
+  const stop = useCallback(() => {
+    abortRef.current?.abort();
+    const reader = readerRef.current;
+    readerRef.current = null;
+    // cancel() is what tells Next to stop reading the Python stream.
+    reader?.cancel().catch(() => {});
+    dispatch({ kind: "stopped", message: "Stopped." });
+  }, []);
 
   return { state, ask, stop };
 }

@@ -71,14 +71,22 @@ export default function AskPanel({ running, onAsk, onStop }: Props) {
           />
           {running ? (
             <button
+              key="stop"
               type="button"
-              onClick={onStop}
+              onClick={(e) => {
+                // Keep this click off the form. The button is replaced by Ask in
+                // the same spot, and the browser would submit that click as a new question.
+                e.preventDefault();
+                e.stopPropagation();
+                onStop();
+              }}
               className="rounded-xl bg-slate-700 px-5 font-medium text-slate-100 hover:bg-slate-600"
             >
               Stop
             </button>
           ) : (
             <button
+              key="ask"
               type="submit"
               disabled={!question.trim()}
               className="rounded-xl bg-sky-600 px-5 font-medium text-white hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-40"

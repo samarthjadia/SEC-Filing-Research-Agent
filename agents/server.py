@@ -26,6 +26,7 @@ Guardrails (so a public demo can't drain your OpenAI budget):
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import threading
@@ -144,16 +145,50 @@ class AskRequest(BaseModel):
 # Each call starts one new question through the agent. It does not start a new asyncio event loop.
 # It returns an async generator that yields one SSE frame at a time.
 # _start_stream calls it once per /ask. That starts one agent run: model, tools, model again, until final_result.
-async def _sse(question: str) -> AsyncIterator[str]:
+def _sse_frame(event: dict) -> str:
+    """One SSE frame: id, event, and data lines, then a blank line."""
+    return f"id: {event['seq']}\nevent: {event['type']}\ndata: {json.dumps(event, default=str)}\n\n"
+
+
+async def _sse(question: str, request: Request) -> AsyncIterator[str]:
     """Turn each event dict from stream_run() into one SSE frame.
 
-    SSE frame format: "id:", "event:", and "data:" lines, then a blank line.
     The browser splits the stream on blank lines to get one event at a time.
+    A watcher cancels the agent when the client disconnects. Starlette does not
+    do that itself on current ASGI, so Stop would otherwise run the question to the end.
     """
-    async for event in stream_run(question):  # same generator the --events CLI uses
-        if event["type"] == "final": # if the event type is final, record the tokens
-            _record_tokens(event.get("usage") or {}) # record the tokens
-        yield f"id: {event['seq']}\nevent: {event['type']}\ndata: {json.dumps(event, default=str)}\n\n" # yield the event as an SSE frame (id, event, and data lines, then a blank line) 
+    queue: asyncio.Queue[dict | None] = asyncio.Queue()
+
+    async def produce() -> None:
+        try:
+            async for event in stream_run(question):
+                await queue.put(event)
+        finally:
+            # put_nowait does not await, so a cancellation still delivers the sentinel.
+            queue.put_nowait(None)
+
+    producer = asyncio.create_task(produce())
+
+    async def watch() -> None:
+        while not producer.done():
+            if await request.is_disconnected():
+                producer.cancel()
+                return
+            await asyncio.sleep(0.25)
+
+    watcher = asyncio.create_task(watch())
+    try:
+        while True:
+            event = await queue.get()
+            if event is None:
+                break
+            if event["type"] == "final":
+                _record_tokens(event.get("usage") or {})
+            yield _sse_frame(event)
+    finally:
+        watcher.cancel()
+        producer.cancel()
+        await asyncio.gather(producer, watcher, return_exceptions=True) 
 
 # _client_ip(request) runs first and returns a string like "203.0.113.5". 
 # That string is passed into _check_rate_limit. 
@@ -170,7 +205,7 @@ def _start_stream(question: str, request: Request) -> StreamingResponse:
         raise HTTPException(status_code=503, detail="The demo's daily budget is used up. Please try again tomorrow.")
     _check_rate_limit(_client_ip(request)) 
     return StreamingResponse( 
-        _sse(question.strip()),  # FastAPI pulls from this async generator and writes each chunk as it arrives
+        _sse(question.strip(), request),  # FastAPI pulls from this async generator and writes each chunk as it arrives
         media_type="text/event-stream",  # tells the browser this is a Server-Sent Event stream, so it should read the frames as they arrive instead of waiting for the connection to close.
         # X-Accel-Buffering: By default nginx collects response bytes until it has a chunk worth sending. 
         #                    For a normal page that is fine. For this stream it would hold back "calling get_company_filings" 

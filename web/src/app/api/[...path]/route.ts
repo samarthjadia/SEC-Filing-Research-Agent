@@ -42,6 +42,12 @@ async function forward(request: NextRequest, ctx: RouteContext<"/api/[...path]">
   // Tell the backend who the real visitor is, so per-IP rate limits work.
   const visitorIp = request.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? "127.0.0.1";
 
+  // Separate from request.signal. Stop cancels the response body, and that
+  // cancel() below aborts this controller so FastAPI sees the client leave.
+  const upstreamAbort = new AbortController();
+  const abortUpstream = () => upstreamAbort.abort();
+  request.signal.addEventListener("abort", abortUpstream, { once: true });
+
   let upstream: Response;
   try {
     upstream = await fetch(target, {
@@ -53,9 +59,12 @@ async function forward(request: NextRequest, ctx: RouteContext<"/api/[...path]">
       // GET requests can't have a body; for POST we pass the JSON text through.
       body: request.method === "GET" ? undefined : await request.text(),
       cache: "no-store", // never cache: answers and rate limits are per request
-      signal: request.signal, // if the visitor closes the tab, cancel the backend call too
+      signal: upstreamAbort.signal,
     });
   } catch {
+    if (upstreamAbort.signal.aborted) {
+      return new Response(null, { status: 499 });
+    }
     return Response.json(
       { detail: "Backend is not reachable. Is `uvicorn agents.server:app` running?" },
       { status: 502 },
@@ -63,15 +72,34 @@ async function forward(request: NextRequest, ctx: RouteContext<"/api/[...path]">
   }
 
   const contentType = upstream.headers.get("content-type") ?? "application/json";
-  return new Response(upstream.body, {
-    status: upstream.status,
-    headers: {
-      "content-type": contentType,
-      // "no-transform" stops Next's gzip compression from buffering the
-      // event stream (which would make the trace appear all at once at the end).
-      "cache-control": "no-cache, no-transform",
+  const headers = {
+    "content-type": contentType,
+    // "no-transform" stops Next's gzip compression from buffering the
+    // event stream (which would make the trace appear all at once at the end).
+    "cache-control": "no-cache, no-transform",
+  };
+
+  if (!upstream.body) {
+    return new Response(null, { status: upstream.status, headers });
+  }
+
+  const reader = upstream.body.getReader();
+  const stream = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      const { done, value } = await reader.read();
+      if (done) {
+        controller.close();
+        return;
+      }
+      controller.enqueue(value);
+    },
+    cancel() {
+      abortUpstream();
+      return reader.cancel();
     },
   });
+
+  return new Response(stream, { status: upstream.status, headers });
 }
 
 // A route file exports one function per HTTP method it supports.

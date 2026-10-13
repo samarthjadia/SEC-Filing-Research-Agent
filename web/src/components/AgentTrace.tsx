@@ -47,7 +47,7 @@ export default function AgentTrace({ state }: { state: RunState }) {
             <span className="absolute -left-[5px] mt-1.5 h-2.5 w-2.5 rounded-full bg-sky-500" />
             <p className="text-xs font-medium text-slate-400">Step {step.step}</p>
 
-            {step.calls.length === 0 && (
+            {step.calls.length === 0 && state.status !== "error" && (
               <p className="text-sm text-slate-500">
                 {state.status === "done" ? "Reasoned" : "Reasoning…"}
               </p>
