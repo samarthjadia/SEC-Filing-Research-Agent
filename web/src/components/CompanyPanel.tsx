@@ -115,7 +115,7 @@ export default function CompanyPanel({ ticker }: { ticker: string | null }) {
         {series ? (
           <>
             <MetricChart series={series} />
-            <p className="mt-1 text-[11px] text-slate-500">
+            <p className="mt-1 text-[11px] text-slate-500 [overflow-wrap:anywhere]">
               Quarterly values from XBRL tag <span className="font-mono">{series.concept}</span>.
               {metric === "eps"
                 ? " Q4 appears only when the company tagged a 3-month figure."

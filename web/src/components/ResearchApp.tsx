@@ -42,7 +42,7 @@ export default function ResearchApp() {
         <AgentTrace state={state} />
         <AnswerCard state={state} />
       </div>
-      <div className="lg:sticky lg:top-6 lg:self-start">
+      <div className="min-w-0 lg:sticky lg:top-6 lg:self-start">
         <CompanyPanel ticker={ticker} />
       </div>
     </div>

@@ -59,8 +59,8 @@ export default function AgentTrace({ state }: { state: RunState }) {
                   <details className="group rounded-lg px-2 py-1 hover:bg-slate-800/60">
                     <summary className="flex cursor-pointer list-none items-center gap-2 text-sm text-slate-200">
                       <StatusIcon status={call.status} />
-                      <span className="flex-1">{describeToolCall(call.name, call.args)}</span>
-                      <span className="text-xs text-slate-500">{seconds(call)}</span>
+                      <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">{describeToolCall(call.name, call.args)}</span>
+                      <span className="shrink-0 text-xs text-slate-500">{seconds(call)}</span>
                     </summary>
                     <div className="mt-2 space-y-2 pl-5 font-mono text-xs text-slate-400">
                       <p>
